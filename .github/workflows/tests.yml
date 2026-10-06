@@ -1,0 +1,29 @@
+name: Parity tests
+
+# A publicacao e feita pelo GitHub Pages direto do branch main; aqui so rodam os testes.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # O chat tem de responder o mesmo texto que o bot do WhatsApp.
+      - name: Run parity tests
+        run: npm test
