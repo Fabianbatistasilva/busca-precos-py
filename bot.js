@@ -1,6 +1,8 @@
-// Busca e comparação de preços, iguais às do bot do WhatsApp (bot_busca.py), rodando no navegador.
-// As regras de leitura dos nomes ficam no Python: cada produto já chega com o princípio ativo, a dose e a
-// quantidade extraídos, junto com a lista de sinônimos. Aqui só se busca, compara e monta o texto.
+// Busca e comparação de preços no navegador.
+// As regras de leitura dos nomes ficam em quem gera os dados: cada produto já chega com o princípio ativo, a dose
+// e a quantidade extraídos, junto com a lista de sinônimos. Aqui só se busca, compara e monta o texto.
+// Dois modos, decididos pelos dados: venda (o site: só nome e preço) e interno (usado só nos testes de paridade,
+// com os textos de tests/modo-interno.js).
 
 export const MAX_PRODUCTS = 40;
 export const MAX_COMPARED = 30;
@@ -18,34 +20,31 @@ const CONNECTORS = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'para']);
 const BRAND_FILLERS = new Set(['pharma', 'farma', 'pharm', 'labs', 'lab']);
 const ROMAN = { ii: '2', iii: '3' };
 
-// Como cada loja pode ser chamada no final do /comparar (texto já sem acentos e em minúsculas).
-const STORE_ALIASES = [
-  ['(?:atacado\\s*)?paraguai|atacadopy|ap', 'atacadoparaguai'],
-  ['(?:atacado\\s*)?brasil|atacadobrasil|ab', 'atacadobrasil'],
-  ['shape(?:\\s*total)?|shapetotal|st', 'shapetotal'],
-  ['by\\s*pharmacon|bypharmacon|bymac|byp|by', 'bypharmacon'],
-];
-
 export const HELP = 'Use assim: */busca nome do produto*\nExemplo: /busca enantato 250';
-export const COMPARE_HELP =
-  'Use assim: */comparar MARCA1 MARCA2* ou */comparar MARCA1 MARCA2 LOJA*\n' +
-  'Exemplos: /comparar ZPHC Cooper · /comparar alpha pharma x landerlan · /comparar zphc cooper shape\n' +
-  'Lojas: shape, bypharmacon, paraguai, brasil';
-export const GUIDE = `🤖 *Como usar*
+// Textos e apelidos do modo interno; vazios no site.
+let internal = { storeAliases: [], compareHelp: '', guide: '', otherCommand: '' };
+export function setInternalMode(texts) {
+  internal = texts;
+}
+
+export const SALE_HELP = 'Escreva o nome do produto, o princípio ativo ou a marca.\nExemplo: enantato 250';
+export const SALE_COMPARE_HELP =
+  'Use assim: */comparar MARCA1 MARCA2*\nExemplos: /comparar ZPHC Cooper · /comparar alpha pharma x landerlan';
+export const SALE_GUIDE = `🤖 *Como usar*
 
 *🔎 Buscar um produto*
-Escreva o nome, o princípio ativo, a marca ou o código. Mostra a loja mais barata de cada produto, com estoque.
-_enantato 250_ · _bratva_ · _ST-1396_
+Escreva o nome, o princípio ativo ou a marca. Mostro o que está disponível e o preço.
+_enantato 250_ · _retatrutida_ · _cooper_
 
 *⚖️ /comparar MARCA1 MARCA2*
-Diz qual das duas marcas está mais barata em cada produto equivalente.
-_/comparar zphc cooper_ · só numa loja: _/comparar zphc cooper shape_
+Mostra qual das duas marcas está mais barata em cada produto equivalente.
+_/comparar zphc cooper_
 
-*Código do produto:* é o que vem entre colchetes nas respostas.
-ST = Shape Total · BY = ByPharmacon · AP = Atacado Paraguai · AB = Atacado Brasil
+*📄 Tabela completa*
+O botão *Tabela em PDF*, no topo, baixa todos os produtos e preços.
 
-_Preços de 1 unidade, da última coleta das lojas. Avisos de preço, favoritos e PDFs continuam só no grupo do WhatsApp._`;
-const WHATSAPP_ONLY = 'Esse comando só funciona no grupo do WhatsApp. Aqui você pode buscar um produto ou usar */comparar MARCA1 MARCA2*.';
+_Preços em reais, por unidade. Valores e disponibilidade podem mudar; confirme antes de fechar o pedido._`;
+const SALE_UNKNOWN = 'Não conheço esse comando. Escreva o nome de um produto ou use */comparar MARCA1 MARCA2*.';
 
 export function normalizeText(value) {
   return String(value ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
@@ -87,7 +86,10 @@ export const formatUsd = (value) => `US$ ${thousands(value)}`;
 const named = (item) => (item.codigo ? `[${item.codigo}] ${item.nome}` : item.nome);
 
 function nameWords(items) {
-  return words(normalizeText(items.map((item) => `${item.nome} ${item.marca || ''} ${item.detalhe || ''}`).join(' ')));
+  // "busca" (só nos dados de venda) traz o nome original do produto, que não é mostrado.
+  return words(
+    normalizeText(items.map((item) => `${item.nome} ${item.busca || ''} ${item.marca || ''} ${item.detalhe || ''}`).join(' ')),
+  );
 }
 
 /** Prepara os dados uma vez: produtos agrupados, palavras de cada um e rótulos das marcas. */
@@ -150,6 +152,7 @@ export function prepare(data) {
     synonyms,
     ingredients,
     stores: data.lojas,
+    sale: Boolean(data.venda),
     aliases: data.apelidos_marca || {},
     value,
     generatedAt: collected,
@@ -285,8 +288,8 @@ function summarize(index, found, limit) {
 /** Resposta da busca e o resumo dela (quantos achou, quantos mostrou, o que corrigiu). */
 export function searchDetails(index, query, maxProducts = MAX_PRODUCTS) {
   const asked = queryWords(query);
-  if (!asked.length) return { text: HELP, found: 0, shown: 0, outOfStock: 0, mode: 'ajuda' };
-  const { value, hasBrl, rates } = index;
+  const { value, hasBrl, rates, sale } = index;
+  if (!asked.length) return { text: sale ? SALE_HELP : HELP, found: 0, shown: 0, outOfStock: 0, mode: 'ajuda' };
   const money = (amount) => (hasBrl ? formatBrl(amount) : formatUsd(amount));
 
   // Palavra que não existe em produto nenhum: tenta a mais parecida antes de responder "nada encontrado".
@@ -324,7 +327,9 @@ export function searchDetails(index, query, maxProducts = MAX_PRODUCTS) {
       body = `Encontrei ${outOfStock} produto(s), mas todos estão sem estoque agora.`;
     } else if (unknown.length) {
       const listed = unknown.map((word) => `"${word}"`).join(', ');
-      body = `Nenhuma das lojas tem ${listed} no nome, na marca ou na composição. Confira a grafia ou tente o princípio ativo.`;
+      body = sale
+        ? `Não encontrei ${listed} na tabela. Confira a grafia ou tente o princípio ativo.`
+        : `Nenhuma das lojas tem ${listed} no nome, na marca ou na composição. Confira a grafia ou tente o princípio ativo.`;
     }
     const parts = [title, ...(fixes.length ? [`_${fixes.join(' ')}_`] : []), body];
     return { text: parts.join('\n\n'), ...stats(0, 'vazio') };
@@ -356,6 +361,8 @@ export function searchDetails(index, query, maxProducts = MAX_PRODUCTS) {
             .filter((word) => !asked.some((given) => word.startsWith(given)))
             .sort((a, b) => a.length - b.length || (a < b ? -1 : a > b ? 1 : 0));
     if (narrowing.length && largest.items.length > 1) hint = ` (ex.: /busca ${asked.join(' ')} ${narrowing[narrowing.length - 1]})`;
+    // No site do cliente o nome não repete a marca: ela é o título do bloco.
+    if (sale && grouping === 'tipo') grouping = 'tipo de produto';
   }
 
   const byBrand = new Map();
@@ -364,10 +371,10 @@ export function searchDetails(index, query, maxProducts = MAX_PRODUCTS) {
     byBrand.get(item.chave_marca).push(item);
   }
 
+  const stocked = sale ? 'disponíveis' : 'com estoque';
+  const groupLabel = grouping === 'tipo de produto' ? 'tipo(s) de produto' : `${grouping}(s)`;
   const lines = [
-    kinds
-      ? `${title} — ${found.length} produto(s) com estoque, de ${kinds} ${grouping}(s)`
-      : `${title} — ${found.length} produto(s) com estoque`,
+    kinds ? `${title} — ${found.length} produto(s) ${stocked}, de ${kinds} ${groupLabel}` : `${title} — ${found.length} produto(s) ${stocked}`,
     '',
   ];
   if (fixes.length) lines.splice(1, 0, `_${fixes.join(' ')}_`);
@@ -385,7 +392,11 @@ export function searchDetails(index, query, maxProducts = MAX_PRODUCTS) {
         const bestValue = hasBrl ? best.preco * rates[item.loja] : best.preco;
         quantity = ` · 1 un. (${best.min}+ un.: ${money(bestValue)})`;
       }
-      lines.push(`• ${named(item)} — *${price}* · ${index.stores[item.loja]}${quantity}${extra.get(item) || ''}`);
+      lines.push(
+        sale
+          ? `• ${item.nome} — *${formatBrl(item.preco)}*${extra.get(item) || ''}`
+          : `• ${named(item)} — *${price}* · ${index.stores[item.loja]}${quantity}${extra.get(item) || ''}`,
+      );
     }
     lines.push('');
   }
@@ -396,10 +407,10 @@ export function searchDetails(index, query, maxProducts = MAX_PRODUCTS) {
       `Busca ampla: mostrei o mais barato de cada ${grouping}; "+N até" são as outras opções e o preço da mais cara. ` +
         `Para ver todas, acrescente uma palavra${hint}.`,
     );
-    if (kinds > shown.length) notes.push(`Ficaram de fora ${kinds - shown.length} ${grouping}(s) mais caros.`);
+    if (kinds > shown.length) notes.push(`Ficaram de fora ${kinds - shown.length} ${groupLabel} mais caros.`);
   }
   if (outOfStock) notes.push(`${outOfStock} sem estoque não listado(s).`);
-  notes.push(`Melhor preço de 1 unidade entre as lojas · coleta de ${index.collected}`);
+  notes.push(sale ? `Preço por unidade · atualizado em ${index.collected}` : `Melhor preço de 1 unidade entre as lojas · coleta de ${index.collected}`);
   lines.push(`_${notes.join(' ')}_`);
   return { text: lines.join('\n'), ...stats(shown.length, kinds ? `amplo_por_${grouping}` : 'normal') };
 }
@@ -419,10 +430,10 @@ function parseBrands(index, text) {
   return parts.map((part) => brandKey(index, part)).filter(Boolean);
 }
 
-/** Separa a loja opcional do fim do texto: "zphc cooper shape" -> ["zphc cooper", "shapetotal"]. */
+/** Separa do fim do texto o apelido opcional de uma origem (só no modo interno). */
 function splitStore(text) {
   const normalized = normalizeText(text).trim();
-  for (const [pattern, store] of STORE_ALIASES) {
+  for (const [pattern, store] of internal.storeAliases) {
     const found = normalized.match(new RegExp(`(?:^|\\s)(?:na\\s+|no\\s+|loja\\s+)?(?:${pattern})$`));
     if (found) return [normalized.slice(0, found.index).replace(/^[ ,]+|[ ,]+$/g, ''), store];
   }
@@ -478,13 +489,14 @@ const byScore = (a, b) => b[0] - a[0] || a[1] - b[1] || a[2] - b[2];
 
 /** Produtos equivalentes das duas marcas (mesmo princípio ativo, dose e embalagem), com a mais barata de cada. */
 export function compareBrands(index, rawText, maxProducts = MAX_COMPARED) {
-  const [text, onlyStore] = splitStore(rawText);
+  const { labels, value, hasBrl, stores, sale } = index;
+  const [text, onlyStore] = sale ? [normalizeText(rawText).trim(), null] : splitStore(rawText);
   const brands = parseBrands(index, text);
-  if (brands.length !== 2 || brands[0] === brands[1]) return COMPARE_HELP;
-  const { labels, value, hasBrl, stores } = index;
+  if (brands.length !== 2 || brands[0] === brands[1]) return sale ? SALE_COMPARE_HELP : internal.compareHelp;
   const unknown = brands.filter((key) => !labels.has(key));
   if (unknown.length) {
-    return `Não encontrei a marca *${unknown.join(', ')}* nas lojas. Confira a grafia, por exemplo: ZPHC, Cooper, Landerlan, Oxygen.`;
+    const where = sale ? '' : ' nas lojas';
+    return `Não encontrei a marca *${unknown.join(', ')}*${where}. Confira a grafia, por exemplo: ZPHC, Cooper, Landerlan, Oxygen.`;
   }
   const money = (item) => (hasBrl ? formatBrl(value(item)) : formatUsd(item.preco));
 
@@ -559,17 +571,20 @@ export function compareBrands(index, rawText, maxProducts = MAX_COMPARED) {
   if (similar.length) {
     similarLines.push('', `*Mesmo princípio ativo, dose ou quantidade diferente* (${similar.length}) — não é comparação direta`);
     for (const [[itemA, featuresA], [itemB, featuresB]] of similar.slice(0, maxProducts)) {
-      similarLines.push(`• ${named(itemA)} — ${money(itemA)} · ${size(featuresA)}`);
-      similarLines.push(`   _${named(itemB)} — ${money(itemB)} · ${size(featuresB)}_`);
+      // No site do cliente o nome não traz a marca, então ela vai na frente.
+      const [tagA, tagB] = sale ? [`*${nameA}* · `, `${nameB}: `] : ['', ''];
+      similarLines.push(`• ${tagA}${named(itemA)} — ${money(itemA)} · ${size(featuresA)}`);
+      similarLines.push(`   _${tagB}${named(itemB)} — ${money(itemB)} · ${size(featuresB)}_`);
     }
   }
   if (!pairs.length) {
     if (!similar.length) {
+      if (sale) return `${title}\n\nNão achei produtos equivalentes disponíveis entre as duas marcas.`;
       return `${title}\n\nNão achei produtos equivalentes com estoque entre as duas marcas${onlyStore ? ` no ${stores[onlyStore]}` : ''}.`;
     }
     const note =
       '_Nenhum produto com a mesma dose e quantidade informadas nas duas marcas; por isso não há placar. ' +
-      'Preço de 1 unidade, só com estoque._';
+      (sale ? 'Preço por unidade._' : 'Preço de 1 unidade, só com estoque._');
     return [title, ...similarLines, '', note].join('\n');
   }
 
@@ -585,11 +600,16 @@ export function compareBrands(index, rawText, maxProducts = MAX_COMPARED) {
 
   let scoreLine = `🏆 *${nameA}* mais barata em ${wins[brands[0]]} · *${nameB}* em ${wins[brands[1]]}`;
   if (wins.empate) scoreLine += ` · ${wins.empate} empate(s)`;
-  const lines = [`${title} — ${pairs.length} produto(s) equivalentes com estoque`, '', scoreLine, ''];
+  const lines = [`${title} — ${pairs.length} produto(s) equivalentes ${sale ? 'disponíveis' : 'com estoque'}`, '', scoreLine, ''];
   for (const { saving, tie, cheaper, other } of rows.slice(0, maxProducts)) {
     const winner = tie ? 'mesmo preço' : labels.get(cheaper.chave_marca);
-    lines.push(`• *${winner}* · ${named(cheaper)} — *${money(cheaper)}* · ${stores[cheaper.loja]}`);
     const detail = tie ? 'mesmo valor' : `${roundHalfEven(saving)}% mais cara`;
+    if (sale) {
+      lines.push(`• *${winner}* · ${cheaper.nome} — *${money(cheaper)}*`);
+      lines.push(`   _${labels.get(other.chave_marca)}: ${other.nome} — ${money(other)} (${detail})_`);
+      continue;
+    }
+    lines.push(`• *${winner}* · ${named(cheaper)} — *${money(cheaper)}* · ${stores[cheaper.loja]}`);
     const otherCode = other.codigo ? `[${other.codigo}] ` : '';
     lines.push(`   _${labels.get(other.chave_marca)}: ${otherCode}${money(other)} · ${stores[other.loja]} (${detail})_`);
   }
@@ -597,9 +617,12 @@ export function compareBrands(index, rawText, maxProducts = MAX_COMPARED) {
   if (rows.length > maxProducts) notes.push(`Mostrando os ${maxProducts} com maior diferença, de ${rows.length}.`);
   if (onlyStore) notes.push(`Preços só do ${stores[onlyStore]}.`);
   notes.push(
-    'Preço de 1 unidade, só com estoque. Só entram produtos com o mesmo princípio ativo, a mesma dose (mg/UI) ' +
-      'e a mesma quantidade (comprimidos ou ml) informadas nas duas marcas; ' +
-      `confira antes de comprar. Coleta de ${index.collected}`,
+    sale
+      ? 'Só entram produtos com o mesmo princípio ativo, a mesma dose (mg/UI) e a mesma quantidade (comprimidos ou ml) ' +
+          `nas duas marcas. Preço por unidade · atualizado em ${index.collected}`
+      : 'Preço de 1 unidade, só com estoque. Só entram produtos com o mesmo princípio ativo, a mesma dose (mg/UI) ' +
+          'e a mesma quantidade (comprimidos ou ml) informadas nas duas marcas; ' +
+          `confira antes de comprar. Coleta de ${index.collected}`,
   );
   lines.push(...similarLines, '', `_${notes.join(' ')}_`);
   return lines.join('\n');
@@ -609,7 +632,7 @@ export function compareBrands(index, rawText, maxProducts = MAX_COMPARED) {
 export function answer(index, body) {
   const text = body.trim();
   const lowered = text.toLowerCase();
-  if (lowered.startsWith('/help') || lowered.startsWith('/ajuda')) return GUIDE;
+  if (lowered.startsWith('/help') || lowered.startsWith('/ajuda')) return index.sale ? SALE_GUIDE : internal.guide;
   if (lowered.startsWith('/comparar')) return compareBrands(index, text.slice('/comparar'.length));
   if (lowered.startsWith('/busca')) {
     // "/buscar" também vale: sem isso, o "r" que sobra viraria uma palavra da busca.
@@ -617,6 +640,6 @@ export function answer(index, body) {
     if (query.slice(0, 1).toLowerCase() === 'r' && (query.length === 1 || !/[\p{L}\p{N}]/u.test(query[1]))) query = query.slice(1);
     return search(index, query.trim());
   }
-  if (lowered.startsWith('/')) return WHATSAPP_ONLY;
+  if (lowered.startsWith('/')) return index.sale ? SALE_UNKNOWN : internal.otherCommand;
   return search(index, text);
 }

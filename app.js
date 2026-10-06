@@ -1,12 +1,9 @@
 import { answer, prepare } from './bot.js';
 
-// Dados publicados pelo coletor (repositório do painel) a cada coleta. "?dados=URL" troca a origem, para testar.
-const DATA_URL =
-  new URLSearchParams(location.search).get('dados') || 'https://fabianbatistasilva.github.io/respect-pharma-dashboard/bot.json';
+// Preços de venda, publicados junto com a página. "?dados=URL" troca a origem, para testar.
+const DATA_URL = new URLSearchParams(location.search).get('dados') || './venda.json';
 // Antes de responder, busca os dados de novo se os que estão na página têm mais que isso.
 const REFRESH_MS = 5 * 60 * 1000;
-// Coleta mais velha que isso aparece como aviso: o coletor pode ter parado.
-const STALE_MS = 3 * 60 * 60 * 1000;
 
 const log = document.getElementById('log');
 const scroll = document.getElementById('scroll');
@@ -21,13 +18,14 @@ let loading = null;
 
 const escapeHtml = (text) => text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
 
-// As respostas vêm no formato do WhatsApp (*negrito*, _itálico_); aqui viram HTML.
+// As respostas vêm como texto com marcação simples (*negrito*, _itálico_); aqui viram HTML.
 function inline(text) {
   return escapeHtml(text)
     .replace(/\(ex\.: (\/busca [^)]+)\)/g, (_, query) => `(ex.: <button class="try" type="button" data-q="${query}">${query}</button>)`)
     .replace(/\[([A-Z]{2}-[A-Z0-9-]+)\]/g, '<span class="code">$1</span>')
     .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
-    .replace(/(^|\s)_([^_\n]+)_(?=$|[\s.,·])/g, '$1<em>$2</em>');
+    .replace(/(^|\s)_([^_\n]+)_(?=$|[\s.,·])/g, '$1<em>$2</em>')
+    .replace(/R\$ /g, 'R$ '); // o valor não se separa do "R$" na quebra de linha
 }
 
 function render(text) {
@@ -57,12 +55,8 @@ function addMessage(who, text) {
 }
 
 function showStatus() {
-  const age = Date.now() - index.generatedAt.getTime();
-  const stale = age > STALE_MS;
-  status.classList.toggle('warn', stale);
-  status.textContent = stale
-    ? `Preços de ${index.collected} (há ${Math.round(age / 3600000)} h; a coleta pode estar parada)`
-    : `Preços de ${index.collected} · ${Object.keys(index.stores).length} lojas`;
+  status.classList.remove('warn');
+  status.textContent = `Preços atualizados em ${index.collected}`;
 }
 
 async function load() {
@@ -117,8 +111,8 @@ document.addEventListener('click', (event) => {
 
 addMessage(
   'bot',
-  'Escreva o nome de um produto, o princípio ativo, a marca ou o código, e eu mostro a loja mais barata com estoque.\n' +
-    'Para comparar duas marcas: */comparar zphc cooper*. Para ver tudo: */help*.',
+  'Escreva o nome de um produto, o princípio ativo ou a marca, e eu mostro o que está disponível e o preço.\n' +
+    'Para comparar duas marcas: */comparar zphc cooper*. A tabela completa está no botão *Tabela em PDF*, no topo.',
 );
 ensureData().catch(() => {
   status.classList.add('warn');

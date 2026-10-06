@@ -1,28 +1,29 @@
-# Busca de preços (chat)
+# Tabela de preços (chat)
 
-Página de chat que responde buscas de preço e comparações entre marcas, com as mesmas
-respostas do bot do grupo do WhatsApp. É um site estático: não tem servidor, e a busca
-roda no navegador de quem acessa.
+Página de chat em que o cliente busca um produto e vê o preço, compara duas marcas e
+baixa a tabela completa em PDF. É um site estático: não tem servidor, e a busca roda no
+navegador de quem acessa.
 
 ## Como funciona
 
-1. O coletor (repositório `respect-pharma-dashboard`) consulta as lojas e publica
-   `bot.json` a cada coleta: os produtos, as cotações, os grupos de "mesmo produto" e a
-   lista de sinônimos.
-2. `app.js` baixa esse arquivo ao abrir a página (e de novo se ele tiver mais de 5 minutos).
+1. A cada publicação, o site recebe dois arquivos prontos: `venda.json` (produtos e
+   preços) e `tabela-precos.pdf` (a tabela completa).
+2. `app.js` carrega `venda.json` ao abrir a página (e de novo se tiver mais de 5 minutos).
 3. `bot.js` faz a busca e a comparação e devolve o texto; `app.js` mostra na conversa.
 
-As regras de leitura dos nomes (princípio ativo, dose, quantidade) ficam só no Python do
-coletor. Cada produto já chega com isso extraído, então mexer nos sinônimos ou nas regras
-lá muda o chat sem alterar este repositório.
+A publicação (`.github/workflows/publicar.yml`) roda a cada envio de código e algumas
+vezes por hora, para trazer os preços novos. Se a fonte dos dados estiver fora do ar,
+ficam os últimos arquivos salvos neste repositório.
 
 ## O que o chat responde
 
-- Texto simples ou `/busca nome`: a loja mais barata de cada produto com estoque.
-- `/comparar MARCA1 MARCA2 [loja]`: qual marca está mais barata em cada produto equivalente.
+- Nome do produto, princípio ativo ou marca: o que está disponível e o preço.
+- `/comparar MARCA1 MARCA2`: qual marca está mais barata em cada produto equivalente.
 - `/help`: o guia.
+- Botão **Tabela em PDF**: todos os produtos e preços.
 
-Avisos de preço, favoritos e PDFs continuam só no grupo do WhatsApp.
+A busca entende erro de digitação ("zhpc"), nomes colados ou separados ("bpc157",
+"bpc 157") e nomes comerciais ("masteron" acha drostanolona).
 
 ## Arquivos
 
@@ -31,23 +32,13 @@ Avisos de preço, favoritos e PDFs continuam só no grupo do WhatsApp.
 | `index.html` | A página e o visual |
 | `app.js` | Carrega os dados e cuida da conversa |
 | `bot.js` | Busca e comparação (sem nada de tela; roda também no Node) |
-| `tests/` | Teste de paridade com o bot do WhatsApp |
-
-O endereço dos dados fica em `DATA_URL`, no começo de `app.js`.
+| `venda.json`, `tabela-precos.pdf` | Últimos dados salvos, usados se a atualização falhar |
+| `tests/` | Testes da busca e da comparação |
 
 ## Testes
 
 ```
 npm test
-```
-
-O teste exige que `bot.js` responda **exatamente** o mesmo texto que o bot do WhatsApp para
-106 consultas. `tests/esperado.json` guarda as respostas do bot em Python e `tests/dados.json`
-os dados usados. Depois de mudar a busca no bot do WhatsApp, gere os dois de novo e ajuste
-`bot.js` até o teste passar:
-
-```
-python tests/gerar_esperado.py --bot "C:/caminho/monitor-shapetotal" --exportador "C:/caminho/respect-pharma-dashboard/comparador"
 ```
 
 ## Ver no computador
@@ -56,4 +47,4 @@ python tests/gerar_esperado.py --bot "C:/caminho/monitor-shapetotal" --exportado
 python -m http.server 8799
 ```
 
-e abra `http://127.0.0.1:8799/?dados=/tests/dados.json` (usa os dados do teste em vez dos publicados).
+e abra `http://127.0.0.1:8799/`.

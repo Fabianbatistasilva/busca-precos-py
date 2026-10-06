@@ -1,2 +1,5 @@
 __pycache__/
 node_modules/
+# Dados de comparação do teste de paridade: gerados no computador, nunca publicados.
+tests/dados.json
+tests/esperado.json

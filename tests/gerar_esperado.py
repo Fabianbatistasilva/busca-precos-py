@@ -1,8 +1,9 @@
-"""Gera os arquivos do teste de paridade: as respostas do bot do WhatsApp (Python) para uma lista de consultas.
+"""Gera os arquivos do teste de paridade: as respostas da busca interna (Python) para uma lista de consultas.
 
-O teste (tests/paridade.test.mjs) exige que o chat do site responda exatamente o mesmo texto.
+O teste (tests/paridade.test.mjs) exige que bot.js responda exatamente o mesmo texto. Os arquivos gerados
+(tests/dados.json e tests/esperado.json) ficam só no computador; o .gitignore não deixa irem para o repositório.
 
-    python tests/gerar_esperado.py --bot "C:/caminho/monitor-shapetotal" --exportador "C:/caminho/respect-pharma-dashboard/comparador"
+    python tests/gerar_esperado.py --bot "C:/caminho/da/busca" --exportador "C:/caminho/do/exportador"
 """
 from __future__ import annotations
 

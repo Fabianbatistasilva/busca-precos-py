@@ -1,0 +1,67 @@
+name: Publicar o site
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Busca os precos novos varias vezes por hora.
+    - cron: '7,27,47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      FONTE: ${{ vars.FONTE_DADOS || 'https://fabianbatistasilva.github.io/respect-pharma-dashboard' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run tests
+        run: npm test
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # So a pagina e os dados vao ao ar. Se a fonte estiver fora do ar, ficam os ultimos dados salvos no repositorio.
+      - name: Build site folder
+        run: |
+          mkdir site
+          cp index.html app.js bot.js .nojekyll venda.json tabela-precos.pdf site/
+          for file in venda.json tabela-precos.pdf; do
+            if curl -fsS --retry 3 -o "novo-$file" "$FONTE/$file"; then
+              mv "novo-$file" "site/$file"
+            else
+              echo "::warning::Nao consegui atualizar $file; publicando a ultima versao salva"
+            fi
+          done
+          node -e "const d = JSON.parse(require('fs').readFileSync('site/venda.json', 'utf8')); if (!d.venda || !d.produtos.length) throw new Error('venda.json invalido'); console.log(d.produtos.length + ' produtos, precos de ' + d.gerado_em)"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
