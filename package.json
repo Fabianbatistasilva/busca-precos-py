@@ -1,0 +1,10 @@
+{
+  "name": "busca-precos-py",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Chat de busca de preços, com as mesmas respostas do bot do WhatsApp.",
+  "scripts": {
+    "test": "node --test"
+  }
+}
