@@ -48,6 +48,13 @@ def main() -> int:
     spec.loader.exec_module(exporter)
 
     data = json.loads((bot_folder / "data" / "painel.json").read_text(encoding="utf-8"))
+    # Lojas de catálogo em PDF só existem no PC (nunca chegam ao site): ficam fora da comparação.
+    pdf_stores = set(data.get("catalogos_pdf") or {})
+    data["produtos"] = [item for item in data["produtos"] if item["loja"] not in pdf_stores]
+    for group in data.get("grupos", []):
+        group["itens"] = {store: item for store, item in group["itens"].items() if store not in pdf_stores}
+    data["grupos"] = [group for group in data.get("grupos", []) if len(group["itens"]) > 1]
+    data["catalogos_pdf"] = {}
     expected = {"busca": {}, "comparar": {}, "mensagem": {}}
     for query in SEARCHES:
         expected["busca"][query] = bot_busca.search(data, query)

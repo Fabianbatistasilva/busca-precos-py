@@ -19,6 +19,7 @@ const CONNECTORS = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'para']);
 // Complementos do nome da marca que cada loja escreve de um jeito ("King Farma", "King Pharma", "King").
 const BRAND_FILLERS = new Set(['pharma', 'farma', 'pharm', 'labs', 'lab']);
 const ROMAN = { ii: '2', iii: '3' };
+const CODE_PREFIXES = new Set(['st', 'by', 'ap', 'ab', 'lf']);
 
 export const HELP = 'Use assim: */busca nome do produto*\nExemplo: /busca enantato 250';
 // Textos e apelidos do modo interno; vazios no site.
@@ -192,9 +193,11 @@ function wordsMatch(index, asked, tokens) {
   if (wordMatches(index, asked[0], tokens) && wordsMatch(index, asked.slice(1), tokens)) return true;
   // "slu pp" para um produto escrito "SLUPP".
   if (asked.length > 1 && wordMatches(index, asked[0] + asked[1], tokens) && wordsMatch(index, asked.slice(2), tokens)) return true;
-  // "slupp332" para um produto escrito "SLU-PP 332".
+  // "slupp332" para um produto escrito "SLU-PP 332". Código de produto (st1396) não se quebra: "st" + "1"
+  // acharia todo código que começa com ST-1.
   const parts = pieces(asked[0]);
-  if (parts.length > 1 && parts.every((part) => part.length > 1 || isDigits(part))) {
+  const isCode = parts.length === 2 && CODE_PREFIXES.has(parts[0]) && isDigits(parts[1]);
+  if (parts.length > 1 && !isCode && parts.every((part) => part.length > 1 || isDigits(part))) {
     return wordsMatch(index, [...parts, ...asked.slice(1)], tokens);
   }
   return false;
